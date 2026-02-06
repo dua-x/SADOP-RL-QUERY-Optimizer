@@ -1,0 +1,93 @@
+import pandas as pd
+from db import get_connection
+
+
+def fetch_statement_stats(limit: int = 200):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+    SELECT
+        DIGEST,
+        DIGEST_TEXT,
+        COUNT_STAR AS exec_count,
+        SUM_TIMER_WAIT / 1e12 AS total_time_s,
+        AVG_TIMER_WAIT / 1e12 AS avg_time_s,
+        SUM_LOCK_TIME / 1e12 AS total_lock_s,
+        SUM_ROWS_SENT AS rows_sent,
+        SUM_ROWS_EXAMINED AS rows_examined
+    FROM performance_schema.events_statements_summary_by_digest
+    WHERE DIGEST_TEXT IS NOT NULL
+    ORDER BY SUM_TIMER_WAIT DESC
+    LIMIT %s;
+    """
+    cursor.execute(query, (limit,))
+    rows = cursor.fetchall()
+    df = pd.DataFrame(rows)
+
+    cursor.close()
+    conn.close()
+    return df
+
+
+def explain_query(sample_sql: str):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    explain_sql = f"EXPLAIN {sample_sql}"
+    cursor.execute(explain_sql)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return rows[0] if rows else {}
+
+
+def collect_dataset(limit: int = 200, label_threshold: float = 0.5) -> pd.DataFrame:
+    df_stats = fetch_statement_stats(limit)
+def explain_query(sample_sql: str):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    explain_sql = f"EXPLAIN {sample_sql}"
+    cursor.execute(explain_sql)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return rows[0] if rows else {}
+    print(f"Fetched {len(df_stats)} statements.")
+
+    explain_types = []
+    explain_keys = []
+    explain_rows = []
+    explain_extra = []
+    labels = []
+
+    for _, row in df_stats.iterrows():
+        sql = row["DIGEST_TEXT"]
+
+        ex = explain_query(sql)
+
+        explain_types.append(ex.get("type"))
+        explain_keys.append(ex.get("key"))
+        explain_rows.append(ex.get("rows"))
+        explain_extra.append(ex.get("Extra"))
+
+        avg_time = row["avg_time_s"]
+        label = 1 if avg_time is not None and avg_time > label_threshold else 0
+        labels.append(label)
+
+    df_stats["explain_type"] = explain_types
+    df_stats["explain_key"] = explain_keys
+    df_stats["explain_rows"] = explain_rows
+    df_stats["explain_extra"] = explain_extra
+    df_stats["label_slow"] = labels
+
+    return df_stats
+
+
+if __name__ == "__main__":
+    df = collect_dataset(limit=200, label_threshold=0.3)
+    df.to_csv("raw_dataset.csv", index=False)
+    print("Saved raw_dataset.csv")

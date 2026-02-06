@@ -1,0 +1,11 @@
+mysql-connector-python
+pandas
+scikit-learn
+xgboost
+joblib
+python-dotenv
+numpy
+openai>=1.0.0
+requests
+langchain>=0.1.0
+langchain-core>=0.2.0
